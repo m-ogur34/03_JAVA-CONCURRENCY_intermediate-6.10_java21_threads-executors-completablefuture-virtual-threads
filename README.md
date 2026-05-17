@@ -56,28 +56,34 @@ Semaphore           | Kaynak erişim sınırlama               | N permit
 
 ---
 
-## Mülakatta Sık Sorulan Sorular
+## Mülakat Soruları
 
-### Temel
-- **Race condition nedir? Örnek ver.**
-- **volatile ile synchronized farkı nedir?**
-- **Deadlock nasıl oluşur? Nasıl önlenir?**
-- **Thread.sleep() vs Object.wait() farkı?**
-- **synchronized method vs synchronized block farkı?**
+**Q: Race condition nedir? Örnek ver.**
+A: Birden fazla thread paylaşılan veriye eş zamanlı erişince, işlem sırasına bağlı beklenmedik sonuç. Örnek: `count++` = `read + increment + write` 3 adım. T1 okur (0), T2 okur (0), T1 yazar (1), T2 yazar (1). Gerçek değer 2 olmalıydı ama 1. Çözüm: `synchronized`, `AtomicInteger`, `volatile` (sadece görünürlük için).
 
-### Orta Seviye
-- **ReentrantLock synchronized'dan ne zaman tercih edilir?**
-- **ExecutorService türlerini açıkla, ne zaman hangisi kullanılır?**
-- **Future vs CompletableFuture farkı nedir?**
-- **ConcurrentHashMap neden HashMap'ten thread-safe'dir? Nasıl çalışır?**
-- **ThreadLocal nedir, nerede kullanılır?**
+**Q: volatile ile synchronized farkı nedir?**
+A: `volatile`: Değişken cache'lenmesin, tüm thread'ler RAM'den okusun (görünürlük). Atomik olmayan işlemler için yetersiz: `count++` hâlâ race condition yaratır. `synchronized`: Hem görünürlük hem mutual exclusion. Blok içine bir anda sadece bir thread girer. Performans maliyeti yüksek. `volatile` sadece flag/sinyal için (`boolean running = true`), hesaplama için `synchronized`/`Atomic`.
 
-### İleri Seviye
-- **CAS (Compare and Swap) nedir? ABA problemi nasıl çözülür?**
-- **Virtual Thread nedir? Platform thread'den farkı?**
-- **Structured Concurrency ne sağlar?**
-- **synchronized bloğu virtual thread performansını neden düşürür (pinning)?**
-- **ForkJoinPool ne zaman kullanılır?**
+**Q: Deadlock nasıl oluşur? Nasıl önlenir?**
+A: İki thread birbirinin tuttuğu kilidi bekler. T1: kilit A alır → kilit B bekler. T2: kilit B alır → kilit A bekler. Önleme: (1) Kilit sırası — hep aynı sırada al (A sonra B, asla B sonra A). (2) `tryLock(timeout)` — bekleme süresi dolunca vazgeç. (3) Lock sayısını azalt — mümkünse tek lock. (4) Deadlock detection — `jstack` ile thread dump analizi.
+
+**Q: ReentrantLock synchronized'dan ne zaman tercih edilir?**
+A: `synchronized` basit, JVM optimize eder. `ReentrantLock` üstünlükleri: `tryLock()` — kilidi almaya çalış, başarısız olursa dönemez. `lockInterruptibly()` — bekleme sırasında interrupt edilebilir. `Condition` — birden fazla wait/notify koşulu. `fairness` — sıra garantisi. Genel kural: ihtiyaç yoksa `synchronized`, gelişmiş özellik gerekiyorsa `ReentrantLock`.
+
+**Q: Future vs CompletableFuture farkı nedir?**
+A: `Future`: `get()` ile sonucu al, ama bloklar! Callback yok, zincirleme yok, `cancel()` dışında kontrol yok. `CompletableFuture`: `thenApply()`, `thenCompose()`, `thenCombine()` ile zincirleme. `exceptionally()` ile hata yönetimi. `whenComplete()` callback. `CompletableFuture.allOf()` ile N future bekle. Non-blocking: `get()` yerine callback kullan. Modern kod: `CompletableFuture` her zaman tercih edilir.
+
+**Q: ConcurrentHashMap neden HashMap'ten thread-safe'dir?**
+A: Java 8+: Bucket başına bağımsız kilit (segment değil, her bucket için CAS). `get()`: lock almaz, volatile okuma. `put()`: sadece ilgili bucket kilitlenir — concurrent write farklı bucket'ta aynı anda. Boyut hesaplama: `LongAdder` ile atomic. Null key/value yasak (null → sentinel değer olarak kullanılamaz, NPE riski). `Collections.synchronizedMap(map)`: her işlemde tek kilit → düşük concurrency. `ConcurrentHashMap`: yüksek concurrency, segment kilitleme.
+
+**Q: CAS (Compare and Swap) nedir? ABA problemi nasıl çözülür?**
+A: CAS: `compareAndSet(expected, update)` — değer expected ise update ile değiştir, atomik. Lock olmadan thread-safe işlem. CPU instruction seviyesinde atomik. ABA problemi: T1 okur (A), T2 A→B→A yapar, T1 CAS yapar (A görür) — ara değişim fark edilmez. Çözüm: `AtomicStampedReference` — değer + stamp (versiyon) birlikte kontrol edilir. Stamp her güncelleme artar → A→B→A artık farklı stamp.
+
+**Q: Virtual Thread nedir? Platform thread'den farkı?**
+A: Platform thread: OS thread'ine map edilir. Stack: 1-2MB. Thread oluşturma pahalı (~100µs). 10K thread = 10-20GB RAM. Virtual thread (Java 21): JVM tarafından yönetilen hafif thread. Stack: birkaç KB. Milyonlarca oluşturulabilir. I/O'da block olunca platform thread'i bırakır, başka virtual thread çalışır. `Thread.ofVirtual().start(task)`. Uygun: I/O-bound (DB, HTTP). Uygun değil: CPU-bound (hesaplama).
+
+**Q: synchronized virtual thread performansını neden düşürür (pinning)?**
+A: Virtual thread I/O'da block olunca platform thread'ini bırakır — başkası kullanır. Ama `synchronized` blok içindeyken platform thread'ini BIRAKAMAAZ (pin edilmiş). Sistem thread'leri tükenir → throughput düşer. Çözüm: `ReentrantLock` kullan (virtual thread aware). Spring Boot 3.2+ ve JDBC sürücüleri virtual thread uyumlu hale getirildi. `-Djdk.tracePinnedThreads=full` ile tespiti yap.
 
 ---
 
